@@ -65,11 +65,11 @@ export class PaymentService {
             case 'charge.succeeded':
                 // TODO llamar nuestro microservicio
                 const charge = event.data.object;
-                console.log({ 
+                console.log({
                     charge: charge,
                     medataData: charge.metadata,
                     orderId: charge.metadata.orderId,
-                 });
+                });
                 break;
             default:
                 console.log(`Unhandled event type ${event.type}`);
