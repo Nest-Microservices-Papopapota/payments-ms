@@ -1,15 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { envs } from 'src/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { envs, NATS_SERVICE } from 'src/config';
 import Stripe from 'stripe';
 import { PaymentSessionDto } from './dto';
 import { Request, Response } from 'express';
-import { request } from 'https';
+import { ClientProxy } from '@nestjs/microservices';
 @Injectable()
 export class PaymentService {
 
     private readonly stripe = new Stripe(
         envs.STRIPE_SECRET_KEY,
     );
+    private readonly logger = new Logger(PaymentService.name);
+
+    constructor(
+        @Inject(NATS_SERVICE) private readonly client: ClientProxy
+    ) { }
 
     async createSession(paymentSessionDto: PaymentSessionDto) {
         const { currency, items, orderId } = paymentSessionDto;
@@ -40,7 +45,12 @@ export class PaymentService {
             success_url: envs.STRIPE_SUCCESS_URL,
             cancel_url: envs.STRIPE_CANCEL_URL,
         });
-        return session;
+        return {
+            cancelUrl: session.cancel_url,
+            successUrl: session.success_url,
+            url: session.url,
+        }
+        // return session;
     }
 
     async stripeWebhook(
@@ -61,15 +71,17 @@ export class PaymentService {
             // console.log(`Webhook Error: ${err.message}`);
             res.status(400).send({ error: `Webhook Error: ${err.message}` });
         }
+        // console.log(event);
         switch (event.type) {
             case 'charge.succeeded':
-                // TODO llamar nuestro microservicio
                 const charge = event.data.object;
-                console.log({
-                    charge: charge,
-                    medataData: charge.metadata,
+                const payload = {
+                    stripePaymentId: charge.id,
                     orderId: charge.metadata.orderId,
-                });
+                    receiptUrl: charge.receipt_url,
+                }
+                // this.logger.log({ payload })
+                this.client.emit('payment.succeeded', payload);
                 break;
             default:
                 console.log(`Unhandled event type ${event.type}`);
